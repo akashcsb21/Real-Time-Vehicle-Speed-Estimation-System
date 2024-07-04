@@ -1,0 +1,5 @@
+  python speed.py \
+  --source_video_path data/vehicles.mp4 \
+  --target_video_path data/vehicles-result.mp4 \
+  --confidence_threshold 0.4 \
+  --iou_threshold 0.5
