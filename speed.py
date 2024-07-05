@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
     # Initialize video information and YOLO model
     video_info = sv.VideoInfo.from_video_path(video_path=args.source_video_path)
-    model = YOLO("/content/drive/MyDrive/yolov8x.pt")
+    model = YOLO("/content/Real-Time-Vehicle-Speed-Estimation-System/yolov8x.pt")
 
     # Initialize byte tracking, annotators, and transformers
     byte_track = sv.ByteTrack(
