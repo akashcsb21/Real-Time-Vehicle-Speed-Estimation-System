@@ -42,5 +42,5 @@ plt.imshow(annotated_frame_rgb)
 plt.xlabel('X Axis Label')
 plt.ylabel('Y Axis Label')
 plt.title('Annotated Frame')
-plt.axis('off')  # Turn off axis if not needed
+plt.axis('on')  # Turn off axis if not needed
 plt.show()
