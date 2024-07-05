@@ -2,13 +2,14 @@ import argparse
 from collections import defaultdict, deque
 import cv2
 import numpy as np
-from ultralytics import YOLO
-import supervision as sv
+from ultralytics import YOLO  # Assuming this is for object detection
+import supervision as sv  # Custom module for video processing and annotations
 import math
 import csv
 import os
 from datetime import datetime
 
+# Define source and target points for perspective transformation
 SOURCE = np.array([
     [550, 135],
     [1100, 135],
@@ -28,7 +29,7 @@ TARGET = np.array(
     ]
 )
 
-# Function to estimate speed
+# Function to estimate speed between two points
 def estimatespeed(Location1, Location2):
     d_pixel = math.sqrt(math.pow(Location2[0] - Location1[0], 2) + math.pow(Location2[1] - Location1[1], 2))
     ppm = 16  # Assuming 16 pixels per meter
@@ -37,6 +38,7 @@ def estimatespeed(Location1, Location2):
     speed = d_meters * time_constant
     return speed
 
+# Class for perspective transformation of points
 class ViewTransformer:
     def __init__(self, source: np.ndarray, target: np.ndarray) -> None:
         source = source.astype(np.float32)
@@ -51,6 +53,7 @@ class ViewTransformer:
         transformed_points = cv2.perspectiveTransform(reshaped_points, self.m)
         return transformed_points.reshape(-1, 2)
 
+# Function to parse command-line arguments
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Vehicle Speed Estimation using Ultralytics and Supervision"
@@ -96,13 +99,14 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_output_path = os.path.join(args.csv_output_dir, f"vehicle_speeds_{timestamp}.csv")
 
+    # Initialize video information and YOLO model
     video_info = sv.VideoInfo.from_video_path(video_path=args.source_video_path)
     model = YOLO("/content/drive/MyDrive/yolov8x.pt")
 
+    # Initialize byte tracking, annotators, and transformers
     byte_track = sv.ByteTrack(
         frame_rate=video_info.fps, track_activation_threshold=args.confidence_threshold
     )
-
     thickness = sv.calculate_optimal_line_thickness(
         resolution_wh=video_info.resolution_wh
     )
@@ -119,23 +123,29 @@ if __name__ == "__main__":
         position=sv.Position.BOTTOM_CENTER,
     )
 
+    # Generate frames from the source video
     frame_generator = sv.get_video_frames_generator(source_path=args.source_video_path)
 
+    # Define polygon zone and view transformer for perspective adjustment
     polygon_zone = sv.PolygonZone(polygon=SOURCE)
     view_transformer = ViewTransformer(source=SOURCE, target=TARGET)
 
+    # Initialize containers for tracking coordinates and speeds
     coordinates = defaultdict(lambda: deque(maxlen=video_info.fps))
     speeds = defaultdict(list)
 
+    # Open video sink for output and CSV file for writing
     with sv.VideoSink(args.target_video_path, video_info) as sink, open(csv_output_path, mode='w', newline='') as csv_file:
         csv_writer = csv.writer(csv_file)
         csv_writer.writerow(["Vehicle ID", "Average Speed (km/h)"])
 
+        # Iterate through each frame in the video
         for frame in frame_generator:
+            # Perform object detection using YOLO model
             result = model(frame)[0]
             detections = sv.Detections.from_ultralytics(result)
 
-            # Filter detections for vehicles only (e.g., car, truck, bus, motorcycle)
+            # Filter detections for vehicles only
             vehicle_classes = [2, 3, 5, 7]  # Assuming these are the class IDs for vehicles
             detections = detections[np.isin(detections.class_id, vehicle_classes)]
             detections = detections[detections.confidence > args.confidence_threshold]
@@ -143,11 +153,13 @@ if __name__ == "__main__":
             detections = detections.with_nms(threshold=args.iou_threshold)
             detections = byte_track.update_with_detections(detections=detections)
 
+            # Transform detection points based on perspective
             points = detections.get_anchors_coordinates(
                 anchor=sv.Position.BOTTOM_CENTER
             )
             points = view_transformer.transform_points(points=points).astype(int)
 
+            # Update tracker coordinates and calculate speeds
             for tracker_id, [_, y] in zip(detections.tracker_id, points):
                 coordinates[tracker_id].append(y)
 
@@ -164,6 +176,7 @@ if __name__ == "__main__":
                     speeds[tracker_id].append(speed)
                     labels.append(f"#{tracker_id} {int(speed)} km/h")
 
+            # Annotate frame with traces, bounding boxes, and labels
             annotated_frame = frame.copy()
             annotated_frame = trace_annotator.annotate(
                 scene=annotated_frame, detections=detections
@@ -175,8 +188,10 @@ if __name__ == "__main__":
                 scene=annotated_frame, detections=detections, labels=labels
             )
 
+            # Write annotated frame to output video
             sink.write_frame(annotated_frame)
 
+        # Write average speeds to CSV file
         for tracker_id, speed_list in speeds.items():
             if speed_list:
                 average_speed = round(sum(speed_list) / len(speed_list), 2)
